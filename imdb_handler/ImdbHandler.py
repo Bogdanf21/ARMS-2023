@@ -29,5 +29,5 @@ def get_titles_from_url(url, languages=None):
     return movies
 
 
-# print(get_titles_from_URL("https://www.imdb.com/chart/top/"))
-print(get_titles_from_url("https://www.imdb.com/chart/toptv/"))
+# # print(get_titles_from_URL("https://www.imdb.com/chart/top/"))
+# print(get_titles_from_url("https://www.imdb.com/chart/toptv/"))

@@ -1,13 +1,17 @@
-import warnings
-
-import requests
+import json
 import time
+import warnings
+import requests
 
 from bs4 import BeautifulSoup
 
-base_url = "https://www.justwatch.com/"
-titles_url_en = "https://www.justwatch.com/us/tv-show/"
-titles_url_ro = "https://www.justwatch.com/ro/seriale/"
+search_titles = "https://apis.justwatch.com/graphql"
+
+base_url = "https://www.justwatch.com"
+url_en_tv_show = "https://www.justwatch.com/us/tv-show/"
+url_en_movie = "https://www.justwatch.com/us/movie/"
+url_ro_tv_show = "https://www.justwatch.com/ro/seriale/"
+url_ro_movie = "https://www.justwatch.com/ro/film/"
 
 accepted_platforms = [
     'Netflix',
@@ -16,26 +20,69 @@ accepted_platforms = [
     'Amazon Prime'
 ]
 
+def title_search(title, language="en"):
+    country = "US" if language == "en" else language.upper()
 
-def get_url_from_title(title, url=titles_url_en):
-    parts = [part for part in title.split(" ") if part != "\n" and len(part)]
-    new_url = url + "-".join(parts)
-    print("URL:", new_url)
-    return new_url
+    session = requests.session()
+    request_body = {"operationName": "GetSuggestedTitles",
+                    "variables": {"country": country, "language": language, "first": 4,
+                                  "filter": {"searchQuery": title}},
+                    "query": "query GetSuggestedTitles($country: Country!, $language: Language!, $first: Int!, $filter: TitleFilter) {\n  popularTitles(country: $country, first: $first, filter: $filter) {\n    edges {\n      node {\n        ...SuggestedTitle\n        __typename\n      }\n      __typename\n    }\n    __typename\n  }\n}\n\nfragment SuggestedTitle on MovieOrShow {\n  id\n  objectType\n  objectId\n  content(country: $country, language: $language) {\n    fullPath\n    title\n    originalReleaseYear\n    posterUrl\n    fullPath\n    __typename\n  }\n  __typename\n}\n"}
+    request_headers = {
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(search_titles, json=request_body, headers=request_headers)
+
+    if response.status_code != 200:
+        if response.status_code == 429:
+            while response.status_code == 429:
+                time.sleep(10)
+                response = requests.post(search_titles, json=request_body, headers=request_headers)
+        else:
+            warnings.warn("could not request a title")
+    response_dict = json.loads(response.content)
+
+    url_path = response_dict["data"]["popularTitles"]["edges"][0]["node"]["content"]["fullPath"]
+    return url_path.split("/")[-1]
 
 
-def get_platforms_from_title(title, title_base_url=titles_url_ro):
+def get_platforms_from_title(title, region="ro"):
     """
     This needs to be separated from other scrapping because it depends on the region (in this case it is hardcoded
     with Romania :param title: :param title_base_url: If you want to get the streaming platforms from other country,
     give the root URL, for example https://www.justwatch.com/ro/seriale/ for Romania :return: list with the platforms
     that you can watch the show, ex: ["Netflix", "HBO GO"]
     """
-    url = get_url_from_title(title, title_base_url)
-    response = requests.get(url)
-    if response.status_code != 200:
-        raise Exception(f'Status code: {response.status_code}')
-    html = response.content
+    region = region.lower()
+    if region not in ["ro", "us"]:
+        warnings.warn(f"Region {region} not supported")
+        return
+
+    if region == "ro":
+        url_tv_show = url_ro_tv_show
+        url_movie = url_ro_movie
+    else:
+        url_tv_show = url_en_tv_show
+        url_movie = url_en_movie
+
+    title = title_search(title, language="ro")
+    url_tv_show += title
+    url_movie += title
+    response_movie = request_wrapper(f"requests.get(\"{url_movie}\")")
+    while response_movie.status_code == 429:
+        time.sleep(10)
+        response_movie = request_wrapper(f"requests.get(\"{url_movie}\")")
+
+    response_tv_show = request_wrapper(f"requests.get(\"{url_tv_show}\")")
+    while response_tv_show.status_code == 429:
+        time.sleep(10)
+        response_tv_show = request_wrapper(f"requests.get(\"{url_tv_show}\")")
+
+    if response_movie.status_code != 200 and response_tv_show.status_code != 200:
+        raise Exception(f'Could not find title {title}, {response_tv_show}, {response_movie}')
+
+    html = response_movie.content if response_movie.status_code == 200 else response_tv_show.content
 
     # Parse the HTML using BeautifulSoup
     soup = BeautifulSoup(html, "html.parser")
@@ -51,29 +98,103 @@ def get_platforms_from_title(title, title_base_url=titles_url_ro):
     return platforms
 
 
-def get_genres_for_title(title):
-    url = get_url_from_title(title, titles_url_en)
-    response = requests.get(url)
-    if response.status_code != 200:
-        raise Exception(f'Status code: {response.status_code}')
-    html = response.content
+def get_info_for_title(title):
+    try:
+        info = {
+            "genre": None,
+            "rating": None,
+            "number_of_reviews": None,
+            "type": None
+        }
+        title = title_search(title)
+        url_tv_show = url_en_tv_show + title
+        url_movie = url_en_movie + title
 
-    # Parse the HTML using BeautifulSoup
-    soup = BeautifulSoup(html, "html.parser")
+        response_tv_show = request_wrapper(f"requests.get(\"{url_tv_show}\")")
+        while response_tv_show.status_code == 429:
+            time.sleep(10)
+            response_tv_show = request_wrapper(f"requests.get(\"{url_tv_show}\")")
 
-    genres_div = soup.find('div', class_='detail-infos__subheading', string='Genres')
+        response_movie = request_wrapper(f"requests.get(\"{url_movie}\")")
+        while response_movie.status_code == 429:
+            time.sleep(10)
+            response_movie = request_wrapper(f"requests.get(\"{url_movie}\")")
 
-    if genres_div:
-        genres_value_div = genres_div.find_next_sibling('div', class_='detail-infos__value')
-        if genres_value_div:
-            genres_string = genres_value_div.text.strip()
-            return genres_string.split(", ")
-    raise Exception("Genres not found")
+        if response_tv_show.status_code != 200 and response_movie.status_code != 200:
+            raise Exception(f'Could not find info for title {title}, {url_movie}, {url_tv_show}')
+
+        # What if both are 200? What to do
+        html = response_movie.content if response_movie.status_code == 200 else response_tv_show.content
+        info["type"] = "tv-show" if response_tv_show == 200 else "movie"
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Genres
+        genres = None
+        genres_div = soup.find('div', class_='detail-infos__subheading', string='Genres')
+        if genres_div:
+            genres_value_div = genres_div.find_next_sibling('div', class_='detail-infos__value')
+            if genres_value_div:
+                genres_string = genres_value_div.text.strip()
+                genres = genres_string.split(", ")
+
+        if genres is None:
+            warnings.warn(f"Genres not found for title {title}")
+        else:
+            info["genre"] = genres
+
+        imdb_tag_content = None
+        # The rating and number of reviews is in a tag, and it looks like "9.6 (408k)"
+        # a_tag = soup.find('img', {'alt': 'IMDB'}).find_parent('a') if soup.find('img', {'alt': 'IMDB'}) else None
+        a_tags = [t.find_parent('a') for t in soup.find_all('img', {'alt': 'IMDB'}) if soup.find('img', {'alt': 'IMDB'})]
+        for t in a_tags:
+            if t and 'IMDB' in t.find('img')['alt']:
+                imdb_tag_content = t.text.strip()
+
+        if imdb_tag_content is None:
+            warnings.warn(f"Rating not found for title {title}")
+        else:
+            if len(imdb_tag_content.split(" ")) == 2:
+                info["rating"], info["number_of_reviews"] = imdb_tag_content.split(" ")
+            else:
+                info["rating"] = imdb_tag_content
+
+            if info["number_of_reviews"]:
+                info["number_of_reviews"] = shorthand_to_number(info["number_of_reviews"][1:-1])  # [1:-1] gets rid of first
+            # and last character, in our case "(" and ")"
+
+        return info
+    except Exception as e:
+        print(e)
 
 
-show = "Modern Family"
+def shorthand_to_number(string):
+    if string[-1].lower() == 'k':
+        return int(float(string[:-1]) * 1000)
+    elif string[-1].lower() == 'm':
+        return int(float(string[:-1]) * 1000000)
+    else:
+        return int(string)
 
-platform = get_platforms_from_title(show)
-genres = get_genres_for_title(show)
-print(platform)
-print(genres)
+
+def request_wrapper(request_as_string):
+    response = None
+    while response is None:
+        try:
+            response = eval(request_as_string)
+        except Exception as e:
+            warnings.warn(f"Request did not execute")
+            print(e)
+    return response
+
+
+
+__all__ = ["get_info_for_title", "get_platforms_from_title"]
+
+# show = "memento"
+#
+# print(title_search(show, language="ro"))
+# platform = get_platforms_from_title(show)
+# title_info = get_info_for_title(show)
+# print(platform)
+# print(title_info)

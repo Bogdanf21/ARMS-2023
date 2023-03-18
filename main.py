@@ -1,16 +1,45 @@
-# This is a sample Python script.
+import json
+import imdb_handler.ImdbHandler
 
-# Press ⌃R to execute it or replace it with your code.
-# Press Double ⇧ to search everywhere for classes, files, tool windows, actions, and settings.
+from just_watch_handler.JustWatchHandler import get_platforms_from_title, get_info_for_title
 
 
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press ⌘F8 to toggle the breakpoint.
-
+titles = [
+    "https://www.imdb.com/chart/top/",
+    "https://www.imdb.com/chart/toptv/"
+]
+titles_file_path = "./db/titles.txt"
+titles_info_file_path = "./db/titles_info.txt"
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    print_hi('PyCharm')
+    # Get titles
+    titles = imdb_handler.ImdbHandler.get_titles_from_url(titles[0])
+    file = open(titles_file_path, "w")
+    titles = [t["title"] for t in titles]
+    file.write(json.dumps(titles))
+    file.close()
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+    titles_file = open(titles_file_path, 'r')
+    contents = titles_file.read()
+    print("Contents:", contents)
+    titles_list = json.loads(contents)
+    print("titles:", titles_list)
+
+    infos = []
+    for title in titles_list:
+        platforms = get_platforms_from_title(title)
+        info = get_info_for_title(title)
+        title_info = {
+            "title": title,
+            **info,
+            "platforms": platforms
+        }
+
+        infos.append(title_info)
+        print("Infos:", title_info)
+
+    titles_info_file = open(titles_info_file_path, "w")
+    titles_info_file.write(str(infos))
+    titles_info_file.close()
+
