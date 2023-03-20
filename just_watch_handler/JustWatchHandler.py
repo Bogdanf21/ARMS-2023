@@ -20,6 +20,7 @@ accepted_platforms = [
     'Amazon Prime'
 ]
 
+
 def title_search(title, language="en"):
     country = "US" if language == "en" else language.upper()
 
@@ -42,9 +43,10 @@ def title_search(title, language="en"):
         else:
             warnings.warn("could not request a title")
     response_dict = json.loads(response.content)
-
-    url_path = response_dict["data"]["popularTitles"]["edges"][0]["node"]["content"]["fullPath"]
-    return url_path.split("/")[-1]
+    if len(response_dict["data"]["popularTitles"]["edges"]) != 0:
+        url_path = response_dict["data"]["popularTitles"]["edges"][0]["node"]["content"]["fullPath"]
+        return url_path.split("/")[-1]
+    return None
 
 
 def get_platforms_from_title(title, region="ro"):
@@ -66,9 +68,12 @@ def get_platforms_from_title(title, region="ro"):
         url_tv_show = url_en_tv_show
         url_movie = url_en_movie
 
-    title = title_search(title, language="ro")
-    url_tv_show += title
-    url_movie += title
+    found_title = title_search(title, language="ro")
+    if found_title is None:
+        warnings.warn(f"Title {found_title} not found in suggestions")
+        return []
+    url_tv_show += found_title
+    url_movie += found_title
     response_movie = request_wrapper(f"requests.get(\"{url_movie}\")")
     while response_movie.status_code == 429:
         time.sleep(10)
@@ -80,7 +85,7 @@ def get_platforms_from_title(title, region="ro"):
         response_tv_show = request_wrapper(f"requests.get(\"{url_tv_show}\")")
 
     if response_movie.status_code != 200 and response_tv_show.status_code != 200:
-        raise Exception(f'Could not find title {title}, {response_tv_show}, {response_movie}')
+        raise Exception(f'Could not find title {found_title}, {response_tv_show}, {response_movie}')
 
     html = response_movie.content if response_movie.status_code == 200 else response_tv_show.content
 
@@ -106,9 +111,12 @@ def get_info_for_title(title):
             "number_of_reviews": None,
             "type": None
         }
-        title = title_search(title)
-        url_tv_show = url_en_tv_show + title
-        url_movie = url_en_movie + title
+        found_title = title_search(title)
+        if found_title is None:
+            print(f"The title {found_title} has not been found in suggestions")
+            return {}
+        url_tv_show = url_en_tv_show + found_title
+        url_movie = url_en_movie + found_title
 
         response_tv_show = request_wrapper(f"requests.get(\"{url_tv_show}\")")
         while response_tv_show.status_code == 429:
@@ -121,7 +129,7 @@ def get_info_for_title(title):
             response_movie = request_wrapper(f"requests.get(\"{url_movie}\")")
 
         if response_tv_show.status_code != 200 and response_movie.status_code != 200:
-            raise Exception(f'Could not find info for title {title}, {url_movie}, {url_tv_show}')
+            raise Exception(f'Could not find info for title {found_title}, {url_movie}, {url_tv_show}')
 
         # What if both are 200? What to do
         html = response_movie.content if response_movie.status_code == 200 else response_tv_show.content
@@ -139,7 +147,7 @@ def get_info_for_title(title):
                 genres = genres_string.split(", ")
 
         if genres is None:
-            warnings.warn(f"Genres not found for title {title}")
+            warnings.warn(f"Genres not found for title {found_title}")
         else:
             info["genre"] = genres
 
@@ -152,7 +160,7 @@ def get_info_for_title(title):
                 imdb_tag_content = t.text.strip()
 
         if imdb_tag_content is None:
-            warnings.warn(f"Rating not found for title {title}")
+            warnings.warn(f"Rating not found for title {found_title}")
         else:
             if len(imdb_tag_content.split(" ")) == 2:
                 info["rating"], info["number_of_reviews"] = imdb_tag_content.split(" ")
@@ -188,13 +196,12 @@ def request_wrapper(request_as_string):
     return response
 
 
-
 __all__ = ["get_info_for_title", "get_platforms_from_title"]
 
-# show = "memento"
-#
-# print(title_search(show, language="ro"))
-# platform = get_platforms_from_title(show)
-# title_info = get_info_for_title(show)
-# print(platform)
-# print(title_info)
+show = "My Father and My Son"
+
+print(title_search(show, language="ro"))
+platform = get_platforms_from_title(show)
+title_info = get_info_for_title(show)
+print(platform)
+print(title_info)
