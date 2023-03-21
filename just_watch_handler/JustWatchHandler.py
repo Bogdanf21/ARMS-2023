@@ -5,20 +5,13 @@ import requests
 
 from bs4 import BeautifulSoup
 
+import db.consts
+
 search_titles = "https://apis.justwatch.com/graphql"
 
 base_url = "https://www.justwatch.com"
-url_en_tv_show = "https://www.justwatch.com/us/tv-show/"
-url_en_movie = "https://www.justwatch.com/us/movie/"
-url_ro_tv_show = "https://www.justwatch.com/ro/seriale/"
-url_ro_movie = "https://www.justwatch.com/ro/film/"
 
-accepted_platforms = [
-    'Netflix',
-    'HBO Max',
-    'Disney Plus',
-    'Amazon Prime'
-]
+accepted_platforms = db.consts.accepted_platforms
 
 
 def title_search(title, language="en"):
@@ -45,7 +38,7 @@ def title_search(title, language="en"):
     response_dict = json.loads(response.content)
     if len(response_dict["data"]["popularTitles"]["edges"]) != 0:
         url_path = response_dict["data"]["popularTitles"]["edges"][0]["node"]["content"]["fullPath"]
-        return url_path.split("/")[-1]
+        return url_path
     return None
 
 
@@ -61,33 +54,22 @@ def get_platforms_from_title(title, region="ro"):
         warnings.warn(f"Region {region} not supported")
         return
 
-    if region == "ro":
-        url_tv_show = url_ro_tv_show
-        url_movie = url_ro_movie
-    else:
-        url_tv_show = url_en_tv_show
-        url_movie = url_en_movie
-
+    url_title = base_url
     found_title = title_search(title, language="ro")
     if found_title is None:
         warnings.warn(f"Title {found_title} not found in suggestions")
-        return []
-    url_tv_show += found_title
-    url_movie += found_title
-    response_movie = request_wrapper(f"requests.get(\"{url_movie}\")")
-    while response_movie.status_code == 429:
+        return {}
+    url_title += found_title
+    response = request_wrapper(f"requests.get(\"{url_title}\")")
+
+    while response.status_code == 429:
         time.sleep(10)
-        response_movie = request_wrapper(f"requests.get(\"{url_movie}\")")
+        response = request_wrapper(f"requests.get(\"{url_title}\")")
 
-    response_tv_show = request_wrapper(f"requests.get(\"{url_tv_show}\")")
-    while response_tv_show.status_code == 429:
-        time.sleep(10)
-        response_tv_show = request_wrapper(f"requests.get(\"{url_tv_show}\")")
+    if response.status_code != 200:
+        raise Exception(f'Could not find title {found_title}, {response}')
 
-    if response_movie.status_code != 200 and response_tv_show.status_code != 200:
-        raise Exception(f'Could not find title {found_title}, {response_tv_show}, {response_movie}')
-
-    html = response_movie.content if response_movie.status_code == 200 else response_tv_show.content
+    html = response.content
 
     # Parse the HTML using BeautifulSoup
     soup = BeautifulSoup(html, "html.parser")
@@ -100,7 +82,8 @@ def get_platforms_from_title(title, region="ro"):
             for img in row.find_all('img'):
                 platforms.add(img['alt'])
     platforms = [p for p in platforms if p in accepted_platforms]
-    return platforms
+    return {"platforms": platforms,
+            "region": region}
 
 
 def get_info_for_title(title):
@@ -115,25 +98,19 @@ def get_info_for_title(title):
         if found_title is None:
             print(f"The title {found_title} has not been found in suggestions")
             return {}
-        url_tv_show = url_en_tv_show + found_title
-        url_movie = url_en_movie + found_title
+        url_title = base_url
+        url_title += found_title
 
-        response_tv_show = request_wrapper(f"requests.get(\"{url_tv_show}\")")
-        while response_tv_show.status_code == 429:
+        response = request_wrapper(f"requests.get(\"{url_title}\")")
+        while response.status_code == 429:
             time.sleep(10)
-            response_tv_show = request_wrapper(f"requests.get(\"{url_tv_show}\")")
+            response = request_wrapper(f"requests.get(\"{url_title}\")")
 
-        response_movie = request_wrapper(f"requests.get(\"{url_movie}\")")
-        while response_movie.status_code == 429:
-            time.sleep(10)
-            response_movie = request_wrapper(f"requests.get(\"{url_movie}\")")
+        if response.status_code != 200:
+            raise Exception(f'Could not find info for title {found_title}, {url_title}')
 
-        if response_tv_show.status_code != 200 and response_movie.status_code != 200:
-            raise Exception(f'Could not find info for title {found_title}, {url_movie}, {url_tv_show}')
-
-        # What if both are 200? What to do
-        html = response_movie.content if response_movie.status_code == 200 else response_tv_show.content
-        info["type"] = "tv-show" if response_tv_show == 200 else "movie"
+        html = response.content
+        info["type"] = "movie" if "movie" in response.url or "film" in response.url else "tv-show"
 
         soup = BeautifulSoup(html, "html.parser")
 
@@ -176,6 +153,19 @@ def get_info_for_title(title):
         print(e)
 
 
+def get_title_object(title):
+    info = get_info_for_title(title)
+    plat = get_platforms_from_title(title)
+    to_be_returned = {
+        "title": title,
+        **info,
+        **plat
+    }
+    if len(to_be_returned.keys()) > 1:
+        return to_be_returned
+    return {}
+
+
 def shorthand_to_number(string):
     if string[-1].lower() == 'k':
         return int(float(string[:-1]) * 1000)
@@ -196,12 +186,4 @@ def request_wrapper(request_as_string):
     return response
 
 
-__all__ = ["get_info_for_title", "get_platforms_from_title"]
-
-show = "My Father and My Son"
-
-print(title_search(show, language="ro"))
-platform = get_platforms_from_title(show)
-title_info = get_info_for_title(show)
-print(platform)
-print(title_info)
+__all__ = ["get_info_for_title", "get_platforms_from_title", "get_title_object"]
