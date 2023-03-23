@@ -23,23 +23,9 @@ create_table_title_genres = '''CREATE TABLE IF NOT EXISTS title_genres
                            FOREIGN KEY(title_id) REFERENCES titles(id) ON DELETE CASCADE,
                            FOREIGN KEY(genre_id) REFERENCES genres(id),
                            UNIQUE(title_id, genre_id) ON CONFLICT IGNORE)'''
-
-get_title = '''SELECT * FROM titles WHERE title = \"{}\"'''
-insert_title = "INSERT INTO titles ({}) VALUES ({})"
-delete_title = "DELETE FROM titles WHERE title = \"{}\""
-
 create_table_platforms = '''CREATE TABLE IF NOT EXISTS platforms
                           (id INTEGER PRIMARY KEY, name TEXT UNIQUE)'''
-get_platform_id = '''SELECT id FROM platforms WHERE name=\"{}\"'''
+
 insert_platform = "INSERT OR IGNORE INTO platforms (name) VALUES (\"{}\")"
-
-
-get_genre_id = "SELECT id FROM genres WHERE name =\"{}\""
-insert_genre = "INSERT INTO genres (name) VALUES (\"{}\")"
-
-
-insert_title_platforms = "INSERT INTO title_platforms (title_id, platform_id, region) VALUES (\"{}\", \"{}\", \"{}\")"
-
-insert_title_genres = "INSERT INTO title_genres (title_id, genre_id) VALUES (\"{}\", \"{}\")"
 
 
