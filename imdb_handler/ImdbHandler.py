@@ -1,5 +1,15 @@
+import warnings
+from time import sleep
+
 from bs4 import BeautifulSoup
+from urllib.parse import quote
 import requests
+
+suggestion_endpoint = "https://v3.sg.media-imdb.com/suggestion/x/{title}.json"
+page_title_endpoint = "https://www.imdb.com/title/{id}"
+
+
+HEADERS = {'User-Agent': 'Mozilla/5.0 (iPad; CPU OS 12_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'}
 
 
 def get_titles_from_url(url, languages=None):
@@ -29,5 +39,47 @@ def get_titles_from_url(url, languages=None):
     return movies
 
 
-# # print(get_titles_from_URL("https://www.imdb.com/chart/top/"))
-# print(get_titles_from_url("https://www.imdb.com/chart/toptv/"))
+def get_page_url_from_title(title):
+    title_formatted = quote(title).lower()
+    endpoint = suggestion_endpoint.format(title=title_formatted)
+    response = requests.get(endpoint)
+    while response.status_code == 429:
+        sleep(5)
+        response = requests.get(endpoint)
+    data = response.json()
+    if response.status_code != 200:
+        warnings.warn(f"Genres not found for title {title}")
+        return ""
+
+    try:
+        for d in data["d"]:
+            if d["l"] == title:
+                return page_title_endpoint.format(id=d["id"])
+
+    except Exception as e:
+        print(e)
+        return ""
+
+
+def get_genres_for_title(title):
+    session = requests.session()
+    page_url = get_page_url_from_title(title)
+    print(f"Page url for {title}: {page_url}")
+    if page_url == "" or page_url is None:
+        print("Couldn't get link; no genres found")
+        return []
+    response = session.get(page_url, headers=HEADERS)
+    while response.status_code == 429:
+        sleep(5)
+        response = session.get(page_url, headers=HEADERS)
+    html = response.content
+    soup = BeautifulSoup(html, "html.parser")
+    try:
+        # find the div tag with `data-testid="genres"` attribute
+        genres_div = soup.find('div', {'data-testid': 'genres'})
+        # extract every string in <span class="ipc-chip__text"> tags that are descendants of the genres_div
+        genre_strings = [span.text for span in genres_div.find_all('span', {'class': 'ipc-chip__text'})]
+    except Exception as e:
+        print(e)
+        return []
+    return genre_strings

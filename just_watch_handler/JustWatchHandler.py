@@ -6,6 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 
 import db.consts
+from imdb_handler.ImdbHandler import get_genres_for_title
 
 search_titles = "https://apis.justwatch.com/graphql"
 
@@ -156,10 +157,12 @@ def get_info_for_title(title):
 def get_title_object(title):
     info = get_info_for_title(title)
     plat = get_platforms_from_title(title)
+    # This is the version for IMDB genre
+    # genres = get_genres_for_title(title)
     to_be_returned = {
         "title": title,
         **info,
-        **plat
+        **plat,
     }
     if len(to_be_returned.keys()) > 1:
         return to_be_returned
